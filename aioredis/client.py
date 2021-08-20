@@ -81,10 +81,7 @@ def list_or_args(keys: KeysT, args: Optional[KeysT]) -> KeysT:
         iter(keys)
         # a string or bytes instance can be iterated, but indicates
         # keys wasn't passed as a list
-        if isinstance(keys, (bytes, str)):
-            keys = [keys]
-        else:
-            keys = list(keys)
+        keys = [keys] if isinstance(keys, (bytes, str)) else list(keys)
     except TypeError:
         keys = [keys]
     if args:
@@ -419,11 +416,10 @@ def parse_zadd(response, **options):
 
 
 def parse_client_list(response, **options):
-    clients = []
-    for c in str_if_bytes(response).splitlines():
-        # Values might contain '='
-        clients.append(dict(pair.split("=", 1) for pair in c.split(" ")))
-    return clients
+    return [
+        dict(pair.split("=", 1) for pair in c.split(" "))
+        for c in str_if_bytes(response).splitlines()
+    ]
 
 
 def parse_config_get(response, **options):
@@ -485,8 +481,9 @@ def _parse_node_line(line):
         "last_pong_rcvd": pong,
         "epoch": epoch,
         "slots": slots,
-        "connected": True if connected == "connected" else False,
+        "connected": connected == "connected",
     }
+
     return addr, node_dict
 
 
@@ -501,11 +498,7 @@ def parse_georadius_generic(response, **options):
         # with other command arguments.
         return response
 
-    if type(response) != list:
-        response_list = [response]
-    else:
-        response_list = response
-
+    response_list = [response] if type(response) != list else response
     if not options["withdist"] and not options["withcoord"] and not options["withhash"]:
         # just a bunch of places
         return response_list
@@ -1719,7 +1712,7 @@ class Redis:
         if start is not None and end is not None:
             params.append(start)
             params.append(end)
-        elif (start is not None and end is None) or (end is not None and start is None):
+        elif start is not None or end is not None:
             raise DataError("Both start and end must be specified")
         return self.execute_command("BITCOUNT", *params)
 
@@ -2027,7 +2020,7 @@ class Redis:
         Flag the ``offset`` in ``name`` as ``value``. Returns a boolean
         indicating the previous value of ``offset``.
         """
-        value = value and 1 or 0
+        value = 1 if value else 0
         return self.execute_command("SETBIT", name, offset, value)
 
     def setex(
@@ -2339,13 +2332,12 @@ class Redis:
             pieces.append(b"STORE")
             pieces.append(store)
 
-        if groups:
-            if not get or isinstance(get, (bytes, str)) or len(get) < 2:
-                raise DataError(
-                    'when using "groups" the "get" argument '
-                    "must be specified and contain at least "
-                    "two keys"
-                )
+        if groups and (not get or isinstance(get, (bytes, str)) or len(get) < 2):
+            raise DataError(
+                'when using "groups" the "get" argument '
+                "must be specified and contain at least "
+                "two keys"
+            )
 
         options = {"groups": len(get) if groups else None}
         return self.execute_command("SORT", *pieces, **options)
@@ -2651,7 +2643,7 @@ class Redis:
                 pieces.append(b"~")
             pieces.append(str(maxlen))
         pieces.append(id)
-        if not isinstance(fields, dict) or len(fields) == 0:
+        if not isinstance(fields, dict) or not fields:
             raise DataError("XADD fields must be a non-empty dict")
         for pair in fields.items():
             pieces.extend(pair)
@@ -2898,7 +2890,7 @@ class Redis:
                 raise DataError("XREAD count must be a positive integer")
             pieces.append(b"COUNT")
             pieces.append(str(count))
-        if not isinstance(streams, dict) or len(streams) == 0:
+        if not isinstance(streams, dict) or not streams:
             raise DataError("XREAD streams must be a non empty dict")
         pieces.append(b"STREAMS")
         keys, values = zip(*streams.items())
@@ -2939,7 +2931,7 @@ class Redis:
             pieces.append(str(block))
         if noack:
             pieces.append(b"NOACK")
-        if not isinstance(streams, dict) or len(streams) == 0:
+        if not isinstance(streams, dict) or not streams:
             raise DataError("XREADGROUP streams must be a non empty dict")
         pieces.append(b"STREAMS")
         pieces.extend(streams.keys())
@@ -3593,10 +3585,11 @@ class Redis:
         meters are used.
         """
         pieces: List[EncodableT] = [name, place1, place2]
-        if unit and unit not in ("m", "km", "mi", "ft"):
-            raise DataError("GEODIST invalid unit")
-        elif unit:
-            pieces.append(unit)
+        if unit:
+            if unit in {"m", "km", "mi", "ft"}:
+                pieces.append(unit)
+            else:
+                raise DataError("GEODIST invalid unit")
         return self.execute_command("GEODIST", *pieces)
 
     def geohash(self, name: KeyT, *values: FieldT) -> Awaitable:
@@ -3934,14 +3927,18 @@ class PubSub:
         self.pending_unsubscribe_channels.clear()
         self.pending_unsubscribe_patterns.clear()
         if self.channels:
-            channels = {}
-            for k, v in self.channels.items():
-                channels[self.encoder.decode(k, force=True)] = v
+            channels = {
+                self.encoder.decode(k, force=True): v
+                for k, v in self.channels.items()
+            }
+
             await self.subscribe(**channels)
         if self.patterns:
-            patterns = {}
-            for k, v in self.patterns.items():
-                patterns[self.encoder.decode(k, force=True)] = v
+            patterns = {
+                self.encoder.decode(k, force=True): v
+                for k, v in self.patterns.items()
+            }
+
             await self.psubscribe(**patterns)
 
     @property

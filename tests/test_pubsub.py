@@ -104,7 +104,7 @@ class TestPubSubSubscribeUnsubscribe:
         # note, we may not re-subscribe to channels in exactly the same order
         # so we have to do some extra checks to make sure we got them all
         messages = []
-        for i in range(len(keys)):
+        for _ in range(len(keys)):
             messages.append(await wait_for_message(p))
 
         unique_channels = set()
@@ -482,20 +482,20 @@ class TestPubSubSubcommands:
     async def test_pubsub_channels(self, r):
         p = r.pubsub()
         await p.subscribe("foo", "bar", "baz", "quux")
-        for i in range(4):
+        for _ in range(4):
             assert (await wait_for_message(p))["type"] == "subscribe"
         expected = [b"bar", b"baz", b"foo", b"quux"]
-        assert all([channel in await r.pubsub_channels() for channel in expected])
+        assert all(channel in await r.pubsub_channels() for channel in expected)
 
     @skip_if_server_version_lt("2.8.0")
     async def test_pubsub_numsub(self, r):
         p1 = r.pubsub()
         await p1.subscribe("foo", "bar", "baz")
-        for i in range(3):
+        for _ in range(3):
             assert (await wait_for_message(p1))["type"] == "subscribe"
         p2 = r.pubsub()
         await p2.subscribe("bar", "baz")
-        for i in range(2):
+        for _ in range(2):
             assert (await wait_for_message(p2))["type"] == "subscribe"
         p3 = r.pubsub()
         await p3.subscribe("baz")
@@ -508,7 +508,7 @@ class TestPubSubSubcommands:
     async def test_pubsub_numpat(self, r):
         p = r.pubsub()
         await p.psubscribe("*oo", "*ar", "b*z")
-        for i in range(3):
+        for _ in range(3):
             assert (await wait_for_message(p))["type"] == "psubscribe"
         assert await r.pubsub_numpat() == 3
 

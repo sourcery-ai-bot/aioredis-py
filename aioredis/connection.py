@@ -57,7 +57,7 @@ NONBLOCKING_EXCEPTIONS = tuple(NONBLOCKING_EXCEPTION_ERROR_NUMBERS.keys())
 try:
     import hiredis
 
-except (ImportError, ModuleNotFoundError):
+except ImportError:
     HIREDIS_AVAILABLE = False
 else:
     HIREDIS_AVAILABLE = True
@@ -276,7 +276,7 @@ class SocketBuffer:
         )
 
     async def read(self, length: int) -> bytes:
-        length = length + 2  # make sure to read the \r\n terminator
+        length += 2
         # make sure we've read enough data from the socket
         if length > self.length:
             await self._read_from_socket(length - self.length)
@@ -513,10 +513,7 @@ class HiredisParser(BaseParser):
 
 
 DefaultParser: Type[Union[PythonParser, HiredisParser]]
-if HIREDIS_AVAILABLE:
-    DefaultParser = HiredisParser
-else:
-    DefaultParser = PythonParser
+DefaultParser = HiredisParser if HIREDIS_AVAILABLE else PythonParser
 
 
 class ConnectCallbackProtocol(Protocol):
@@ -772,23 +769,24 @@ class Connection:
     async def check_health(self):
         """Check the health of the connection with a PING/PONG"""
         if (
-            self.health_check_interval
-            and asyncio.get_event_loop().time() > self.next_health_check
+            not self.health_check_interval
+            or asyncio.get_event_loop().time() <= self.next_health_check
         ):
+            return
+        try:
+            await self.send_command("PING", check_health=False)
+            if str_if_bytes(await self.read_response()) != "PONG":
+                raise ConnectionError("Bad response from PING health check")
+        except (ConnectionError, TimeoutError) as err:
+            await self.disconnect()
             try:
                 await self.send_command("PING", check_health=False)
                 if str_if_bytes(await self.read_response()) != "PONG":
-                    raise ConnectionError("Bad response from PING health check")
-            except (ConnectionError, TimeoutError) as err:
-                await self.disconnect()
-                try:
-                    await self.send_command("PING", check_health=False)
-                    if str_if_bytes(await self.read_response()) != "PONG":
-                        raise ConnectionError(
-                            "Bad response from PING health check"
-                        ) from None
-                except BaseException as err2:
-                    raise err2 from err
+                    raise ConnectionError(
+                        "Bad response from PING health check"
+                    ) from None
+            except BaseException as err2:
+                raise err2 from err
 
     async def _send_packed_command(
         self, command: Union[bytes, str, Iterable[Union[bytes, str]]]

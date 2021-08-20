@@ -115,12 +115,11 @@ class SentinelConnectionPool(ConnectionPool):
 
     async def get_master_address(self):
         master_address = await self.sentinel_manager.discover_master(self.service_name)
-        if self.is_master:
-            if self.master_address != master_address:
-                self.master_address = master_address
-                # disconnect any idle connections so that they reconnect
-                # to the new master the next time that they are used.
-                await self.disconnect(inuse_connections=False)
+        if self.is_master and self.master_address != master_address:
+            self.master_address = master_address
+            # disconnect any idle connections so that they reconnect
+            # to the new master the next time that they are used.
+            await self.disconnect(inuse_connections=False)
         return master_address
 
     async def rotate_slaves(self) -> AsyncIterator:
@@ -193,12 +192,12 @@ class Sentinel:
         self.connection_kwargs = connection_kwargs
 
     def __repr__(self):
-        sentinel_addresses = []
-        for sentinel in self.sentinels:
-            sentinel_addresses.append(
-                f"{sentinel.connection_pool.connection_kwargs['host']}:"
-                f"{sentinel.connection_pool.connection_kwargs['port']}"
-            )
+        sentinel_addresses = [
+            f"{sentinel.connection_pool.connection_kwargs['host']}:"
+            f"{sentinel.connection_pool.connection_kwargs['port']}"
+            for sentinel in self.sentinels
+        ]
+
         return f"{self.__class__.__name__}<sentinels=[{','.join(sentinel_addresses)}]>"
 
     def check_master_state(self, state: dict, service_name: str) -> bool:
@@ -236,12 +235,11 @@ class Sentinel:
         self, slaves: Iterable[Mapping]
     ) -> Sequence[Tuple[EncodableT, EncodableT]]:
         """Remove slaves that are in an ODOWN or SDOWN state"""
-        slaves_alive = []
-        for slave in slaves:
-            if slave["is_odown"] or slave["is_sdown"]:
-                continue
-            slaves_alive.append((slave["ip"], slave["port"]))
-        return slaves_alive
+        return [
+            (slave["ip"], slave["port"])
+            for slave in slaves
+            if not slave["is_odown"] and not slave["is_sdown"]
+        ]
 
     async def discover_slaves(
         self, service_name: str

@@ -211,14 +211,8 @@ class Lock:
             await asyncio.sleep(sleep)
 
     async def do_acquire(self, token: Union[str, bytes]) -> bool:
-        if self.timeout:
-            # convert to milliseconds
-            timeout = int(self.timeout * 1000)
-        else:
-            timeout = None
-        if await self.redis.set(self.name, token, nx=True, px=timeout):
-            return True
-        return False
+        timeout = int(self.timeout * 1000) if self.timeout else None
+        return bool(await self.redis.set(self.name, token, nx=True, px=timeout))
 
     async def locked(self) -> bool:
         """
